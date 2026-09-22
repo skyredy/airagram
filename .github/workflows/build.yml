@@ -37,6 +37,21 @@ jobs:
           cp -R $GITHUB_WORKSPACE /Users/Shared/
           mv /Users/Shared/$(basename $GITHUB_WORKSPACE) /Users/Shared/telegram-ios
 
+      # Keeps whatever Bazel already compiled, including from a run that failed
+      # partway, so the next run resumes instead of starting from zero.
+      - name: Prepare bazel cache directory
+        run: |
+          sudo mkdir -p /private/var/tmp/_bazel_containerhost
+          sudo chown -R $(whoami) /private/var/tmp/_bazel_containerhost
+
+      - name: Restore bazel cache
+        uses: actions/cache@v4
+        with:
+          path: /private/var/tmp/_bazel_containerhost
+          key: bazel-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            bazel-${{ runner.os }}-
+
       - name: Build the App
         run: |
           set -x
@@ -63,7 +78,7 @@ jobs:
             --overrideXcodeVersion \
             --bazelUserRoot="$BAZEL_USER_ROOT" \
             build \
-            --configurationPath="build-system/ci-configuration.json" \
+            --configurationPath="build-system/appstore-configuration.json" \
             --codesigningInformationPath=build-system/fake-codesigning \
             --configuration=release_arm64 \
             --buildNumber="$BUILD_NUMBER"
