@@ -150,7 +150,11 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
         items[.myProfile]!.append(PeerInfoScreenDisclosureItem(id: 0, text: presentationData.strings.Settings_MyProfile, icon: PresentationResourcesSettings.myProfile, action: {
             interaction.openSettings(.profile)
         }))
-        
+
+        items[.myProfile]!.append(PeerInfoScreenDisclosureItem(id: 1, text: "AiraGram", icon: UIImage(bundleImageName: "Item List/Icons/Airagram"), action: {
+            interaction.openSettings(.airagram)
+        }))
+
         if !settings.proxySettings.servers.isEmpty {
             let proxyType: String
             if settings.proxySettings.enabled, let activeServer = settings.proxySettings.activeServer {
