@@ -8,6 +8,10 @@
 # which no ordinary certificate can re-sign - the app then dies at launch.
 # These profiles carry our own identifiers instead, so the build stays
 # re-signable.
+#
+# Each profile embeds the signing certificate under DeveloperCertificates:
+# rules_apple's codesigningtool reads that key to work out which identity to
+# sign with, and raises KeyError without it.
 set -e
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -19,8 +23,12 @@ KEY="$(mktemp)"
 CERT="$(mktemp)"
 trap 'rm -f "$KEY" "$CERT"' EXIT
 
+# -legacy: the p12 is encrypted with RC2-40-CBC, which OpenSSL 3 only offers
+# through the legacy provider.
 openssl pkcs12 -legacy -in "$DIR/certs/SelfSigned.p12" -nocerts -nodes -passin pass: -out "$KEY" 2>/dev/null
 openssl pkcs12 -legacy -in "$DIR/certs/SelfSigned.p12" -clcerts -nokeys -passin pass: -out "$CERT" 2>/dev/null
+
+CERT_B64="$(openssl x509 -in "$CERT" -outform DER | openssl base64 -A)"
 
 gen() {
   local outname="$1" suffix="$2" has_aps="$3" uuidnum="$4"
@@ -44,6 +52,10 @@ gen() {
 	</array>
 	<key>CreationDate</key>
 	<date>2026-09-22T00:00:00Z</date>
+	<key>DeveloperCertificates</key>
+	<array>
+		<data>${CERT_B64}</data>
+	</array>
 	<key>Entitlements</key>
 	<dict>
 		<key>application-identifier</key>
