@@ -37,15 +37,13 @@ jobs:
           cp -R $GITHUB_WORKSPACE /Users/Shared/
           mv /Users/Shared/$(basename $GITHUB_WORKSPACE) /Users/Shared/telegram-ios
 
-      # Keeps whatever Bazel already compiled, including from a run that failed
-      # partway, so the next run resumes instead of starting from zero.
       - name: Prepare bazel cache directory
         run: |
           sudo mkdir -p /private/var/tmp/_bazel_containerhost
           sudo chown -R $(whoami) /private/var/tmp/_bazel_containerhost
 
       - name: Restore bazel cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: /private/var/tmp/_bazel_containerhost
           key: bazel-${{ runner.os }}-${{ github.run_id }}
@@ -83,32 +81,45 @@ jobs:
             --configuration=release_arm64 \
             --buildNumber="$BUILD_NUMBER"
 
-          # collect ipa
+      # Saved even when the build fails, so a run that dies partway leaves its
+      # compiled output for the next run instead of starting over.
+      - name: Save bazel cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: /private/var/tmp/_bazel_containerhost
+          key: bazel-${{ runner.os }}-${{ github.run_id }}
+
+      - name: Collect ipa and dSYMs
+        run: |
+          set -x
+          cd /Users/Shared/telegram-ios
+
           OUTPUT_PATH="build/artifacts"
           rm -rf "$OUTPUT_PATH"
           mkdir -p "$OUTPUT_PATH"
-          for f in bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/Telegram.ipa; do
-            cp "$f" $OUTPUT_PATH/
-          done
 
-          # collect dsym
+          # bazel-bin is a symlink into the bazel root, so -L is required for find
+          IPA_PATH="bazel-bin/Telegram/Telegram.ipa"
+          if [ ! -f "$IPA_PATH" ]; then
+            IPA_PATH="$(find -L bazel-out -path '*/bin/Telegram/Telegram.ipa' -type f | head -1)"
+          fi
+          if [ ! -f "$IPA_PATH" ]; then
+            echo "Could not find a built ipa"
+            exit 1
+          fi
+          cp "$IPA_PATH" "$OUTPUT_PATH/Airagram.ipa"
+
           mkdir -p build/DSYMs
-          for f in bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/*.dSYM; do
-            cp -R "$f" build/DSYMs/
-          done
-          zip -r "./$OUTPUT_PATH/Telegram.DSYMs.zip" build/DSYMs 1>/dev/null
+          find -L bazel-bin/Telegram -maxdepth 1 -name '*.dSYM' -exec cp -R {} build/DSYMs/ \; || true
+          zip -r "./$OUTPUT_PATH/Airagram.DSYMs.zip" build/DSYMs 1>/dev/null || true
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ls -la "$OUTPUT_PATH"
+
+      - name: Upload ipa
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: build-${{ env.BUILD_NUMBER }}
-          name: Airagram ${{ env.APP_VERSION }} (${{ env.BUILD_NUMBER }})
-          body: |
-            An unsigned (fake-codesigning) build of Airagram, based on Telegram for iOS ${{ env.APP_VERSION }} (${{ env.BUILD_NUMBER }}).
-          draft: false
-          prerelease: false
-          files: |
-            /Users/Shared/telegram-ios/build/artifacts/Telegram.ipa
-            /Users/Shared/telegram-ios/build/artifacts/Telegram.DSYMs.zip
+          name: Airagram-${{ env.APP_VERSION }}-${{ env.BUILD_NUMBER }}
+          path: /Users/Shared/telegram-ios/build/artifacts
+          if-no-files-found: error
+          retention-days: 30
