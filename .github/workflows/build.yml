@@ -50,6 +50,10 @@ jobs:
           restore-keys: |
             bazel-${{ runner.os }}-
 
+      # Our own bundle id on purpose: ph.telegra.Telegraph is in
+      # Telegram/BUILD's official_bundle_ids, which switches on entitlements
+      # Apple only grants to the official app, and an app carrying those
+      # cannot be re-signed - it dies at launch with a black screen.
       - name: Write build configuration
         env:
           API_ID: ${{ secrets.API_ID }}
@@ -57,12 +61,25 @@ jobs:
         run: |
           cd /Users/Shared/telegram-ios
           if [ -z "$API_ID" ] || [ -z "$API_HASH" ]; then
-            echo "API_ID / API_HASH secrets are not set, using the checked-in configuration as is"
-            cp build-system/appstore-configuration.json build-system/ci-configuration.json
-          else
-            python3 -c "import json,os; c=json.load(open('build-system/appstore-configuration.json')); c['api_id']=os.environ['API_ID']; c['api_hash']=os.environ['API_HASH']; json.dump(c, open('build-system/ci-configuration.json','w'), indent=1)"
-            echo "wrote build-system/ci-configuration.json with api credentials from secrets"
+            echo "warning: API_ID / API_HASH secrets are not set, building with placeholders"
           fi
+          cat > build-system/ci-configuration.json <<EOF
+          {
+           "bundle_id": "org.a74d5e43279953af.airagram",
+           "api_id": "${API_ID:-1}",
+           "api_hash": "${API_HASH:-00000000000000000000000000000000}",
+           "team_id": "AIRAGRM001",
+           "app_center_id": "0",
+           "is_internal_build": "true",
+           "is_appstore_build": "false",
+           "appstore_id": "0",
+           "app_specific_url_scheme": "airagram",
+           "premium_iap_product_id": "",
+           "enable_siri": false,
+           "enable_icloud": false
+          }
+          EOF
+          grep -c api_hash build-system/ci-configuration.json
 
       - name: Build the App
         run: |
@@ -85,13 +102,13 @@ jobs:
           echo "BUILD_NUMBER=$(echo $BUILD_NUMBER)" >> $GITHUB_ENV
           echo "APP_VERSION=$(echo $APP_VERSION)" >> $GITHUB_ENV
 
-          python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
+          python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning-airagram/certs
           python3 -u build-system/Make/Make.py \
             --overrideXcodeVersion \
             --bazelUserRoot="$BAZEL_USER_ROOT" \
             build \
             --configurationPath="build-system/ci-configuration.json" \
-            --codesigningInformationPath=build-system/fake-codesigning \
+            --codesigningInformationPath=build-system/fake-codesigning-airagram \
             --configuration=release_arm64 \
             --buildNumber="$BUILD_NUMBER"
 
