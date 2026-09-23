@@ -50,6 +50,20 @@ jobs:
           restore-keys: |
             bazel-${{ runner.os }}-
 
+      - name: Write build configuration
+        env:
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+        run: |
+          cd /Users/Shared/telegram-ios
+          if [ -z "$API_ID" ] || [ -z "$API_HASH" ]; then
+            echo "API_ID / API_HASH secrets are not set, using the checked-in configuration as is"
+            cp build-system/appstore-configuration.json build-system/ci-configuration.json
+          else
+            python3 -c "import json,os; c=json.load(open('build-system/appstore-configuration.json')); c['api_id']=os.environ['API_ID']; c['api_hash']=os.environ['API_HASH']; json.dump(c, open('build-system/ci-configuration.json','w'), indent=1)"
+            echo "wrote build-system/ci-configuration.json with api credentials from secrets"
+          fi
+
       - name: Build the App
         run: |
           set -x
@@ -76,7 +90,7 @@ jobs:
             --overrideXcodeVersion \
             --bazelUserRoot="$BAZEL_USER_ROOT" \
             build \
-            --configurationPath="build-system/appstore-configuration.json" \
+            --configurationPath="build-system/ci-configuration.json" \
             --codesigningInformationPath=build-system/fake-codesigning \
             --configuration=release_arm64 \
             --buildNumber="$BUILD_NUMBER"
